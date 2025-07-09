@@ -1,0 +1,107 @@
+#!/bin/bash
+
+if [[ "$EUID" -ne 0 ]]
+then
+	whiptail --title "Permission Denied" --msgbox "you must run as a root or use sudo" 10 50
+	exit 1
+fi
+
+launch_nginx(){
+		docker run -d --name nginx_server -p 8080:80 nginx &>/dev/null
+		whiptail --msgbox "nginx launched on port 8080" 10 40
+}
+
+
+launch_mysql(){
+	MYSQL_ROOT_PASSWORD=$(whiptail --inputbox "Enter MYSQL_ROOT_PASSWORD" 10 50 --title "MySQL Setup" 3>&1 1>&2 2>&3)
+	if [[ -z "$MYSQL_ROOT_PASSWORD" ]] 
+	then
+		whiptail --msgbox "YOU MUST ENTER MYSQL_ROOT_PASSWORD" 10 50
+	else
+	       	docker run -d --name mysql_server -e MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD -p 3306:3306 mysql:5.7 &>/dev/null
+	       	whiptail --msgbox "Mysql launched on port 3306" 10 40
+	fi
+}
+
+view_running_containers(){
+	running_output=$(docker ps)
+        whiptail --title "Running Containers" --msgbox "$running_output" 20 80
+}
+
+
+view_stopped_containers(){
+	        not_running_output=$(docker ps -a --filter "status=exited")
+                whiptail --title "Stopped Containers" --msgbox "$not_running_output" 20 80
+}
+
+
+view_logs(){	
+	container=$(whiptail --inputbox "Enter container name to view logs:" 10 50 3>&1 1>&2 2>&3)
+	logs=$(docker logs --tail 20 "$container" 2>&1)
+	whiptail --title "logs for $container" --msgbox "$logs" 20 80
+}
+
+stop_container(){
+	container=$(whiptail --inputbox "Enter container name to stop:" 10 50 3>&1 1>&2 2>&3)
+	if [[ -z "$container" ]]
+	then
+		whiptail --msgbox "invailed input" 10 40
+	elif ! docker container inspect "$container" &>/dev/null 
+	then
+		whiptail --msgbox "container does not exist" 10 40
+	else
+	       	docker stop "$container" &>/dev/null
+                whiptail --msgbox "$container stopped" 10 50
+	fi
+}
+
+remove_container(){
+	container=$(whiptail --inputbox "Enter container name to remove:" 10 50 3>&1 1>&2 2>&3)
+	status=$(docker inspect -f '{{.state.status}}' "$container")
+        if [[ -z "$container" ]]
+        then
+                whiptail --msgbox "invailed input" 10 40 
+		return
+        elif ! docker container inspect "$container" &>/dev/null
+        then
+                whiptail --msgbox "container doesnt exist" 10 40 
+		return
+	fi
+
+	    status=$(docker inspect -f '{{.State.Status}}' "$container")
+
+            if [[ "$status" == "running" ]]; then
+		    whiptail --msgbox "Container '$container' is still running. Please stop it before removing." 10 60 
+	    else
+		    docker rm "$container" &>/dev/null
+		    whiptail --msgbox "Container '$container' removed successfully." 10 50
+	    fi
+}
+
+
+while true; do
+	choice=$(whiptail --title "Docker Service Launcher" --menu "Choose an option:" 20 50 10 \
+	"1" "Launch NGINX" \
+        "2" "Launch MySQL" \
+	"3" "View Runnig Containers" \
+	"4" "View Stopped Containers" \
+	"5" "View Logs" \
+	"6" "Stop Container" \
+	"7" "Remove Container" \
+	"8" "Exit" \
+	3>&1 1>&2 2>&3)
+
+	case $choice in
+		1) launch_nginx ;;
+		2) launch_mysql ;;
+		3) view_running_containers ;;
+		4) view_stopped_containers ;;
+		5) view_logs ;;
+		6) stop_container ;;
+		7) remove_container ;;
+		8) exit ;;
+		*) break ;;
+	esac
+done
+
+
